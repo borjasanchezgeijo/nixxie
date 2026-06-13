@@ -56,10 +56,11 @@ void main() {
   // dusk sun from the west
   float sun = 0.78 + 0.3 * smoothstep(-60.0, 60.0, vXY.x);
   col *= sun * vec3(1.06, 0.98, 0.9);
-  float fogF = 1.0 - exp(-pow(vDist * uFogD * 1.15, 2.0));
-  // dissolve the plane's rim into the fog so its edge never reads as a cut
-  float edgeF = smoothstep(52.0, 88.0, abs(vXY.y));
-  edgeF = max(edgeF, smoothstep(100.0, 126.0, abs(vXY.x)));
+  float fogF = 1.0 - exp(-pow(vDist * uFogD * 1.4, 2.0));
+  // dissolve the plane's rim into the fog so its edge never reads as a cut.
+  // start the fade well inside the plane so no straight rim ever shows.
+  float edgeF = smoothstep(25.0, 92.0, abs(vXY.y));
+  edgeF = max(edgeF, smoothstep(70.0, 138.0, abs(vXY.x)));
   col = mix(col, uFog, clamp(max(fogF, edgeF), 0.0, 1.0));
   gl_FragColor = vec4(col, 1.0);
 }
@@ -109,9 +110,10 @@ export default function Terra() {
   return (
     <group ref={group} position={[0, 0, centerZ(6)]}>
       {/* low enough that the tallest peaks stay clear of the camera's near plane;
-          deep enough that the camera is already over terrain when the room opens */}
-      <mesh position={[0, -22, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[260, 190, 220, 170]} />
+          deep enough that the camera is already over terrain when the room opens.
+          pushed back in z so its near rim never bleeds into the spire chamber view */}
+      <mesh position={[0, -22, -20]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[280, 220, 220, 170]} />
         <shaderMaterial ref={mat} vertexShader={TERRA_VERT} fragmentShader={TERRA_FRAG} uniforms={uniforms} />
       </mesh>
       {CLOUDS.map((c, i) => (

@@ -102,7 +102,7 @@ export const CHAMBERS = [
     numeral: '10',
     name: 'WEB',
     exponent: 26,
-    subtitle: 'and it resembles the beginning',
+    subtitle: 'scale is all',
     bg: '#030309',
     fog: 0.016,
     ink: 'light',

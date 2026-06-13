@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useMemo, useRef } from 'react'
 import { world } from '../../core/world'
 import { useChamber, centerZ } from '../useChamber'
 import ParticleField from '../ParticleField'
@@ -6,8 +6,9 @@ import PetalBloom from '../PetalBloom'
 
 // IV — 10⁰ m — the scale of touch.
 // The white chamber. Enormous defocused flower-gradients hang in a
-// gallery of warm light, and one hard chrome knot tumbles among them —
-// the soft world and the hard object, layered.
+// gallery of warm light, and one hard chrome bloom tumbles among them —
+// a twelve-petal cluster on the vertices of an icosahedron, two thin
+// rings holding it in orbit.
 
 const FLOWERS = [
   { p: [-26, 8, -62], s: 80, petals: 7, seed: 1.7, a: '#ff4fa0', b: '#ffb37a', c: '#ffd9c2', al: 0.92 },
@@ -22,9 +23,25 @@ const FLOWERS = [
   { p: [12, -14, 8], s: 32, petals: 5, seed: 1.1, a: '#ff6a8a', b: '#ffc24f', c: '#d0b8ff', al: 0.78 },
 ]
 
+// twelve vertices of an icosahedron, normalized and pushed out to petal radius
+const PETAL_POSITIONS = (() => {
+  const phi = (1 + Math.sqrt(5)) / 2
+  const raw = [
+    [-1, phi, 0], [1, phi, 0], [-1, -phi, 0], [1, -phi, 0],
+    [0, -1, phi], [0, 1, phi], [0, -1, -phi], [0, 1, -phi],
+    [phi, 0, -1], [phi, 0, 1], [-phi, 0, -1], [-phi, 0, 1],
+  ]
+  const R = 4.6
+  return raw.map(([x, y, z]) => {
+    const n = Math.hypot(x, y, z)
+    return [(x / n) * R, (y / n) * R, (z / n) * R]
+  })
+})()
+
 export default function BloomChamber() {
   const group = useRef()
   const knot = useRef()
+  const petals = useRef([])
   const ringA = useRef()
   const ringB = useRef()
   const pollen = useRef()
@@ -47,6 +64,12 @@ export default function BloomChamber() {
       knot.current.rotation.y = t * (0.14 + a.mid * 0.25)
       knot.current.position.y = 2 + Math.sin(t * 0.4) * 0.9
     }
+    // petals breathe in and out — the bloom opens and closes
+    petals.current.forEach((p, i) => {
+      if (!p) return
+      const breath = 1 + Math.sin(t * 0.7 + i * 1.3) * 0.07 + a.low * 0.18
+      p.scale.setScalar(breath)
+    })
     if (ringA.current) {
       ringA.current.rotation.x = t * 0.12 + 0.6
       ringA.current.rotation.y = t * 0.08
@@ -82,18 +105,36 @@ export default function BloomChamber() {
       ))}
 
       <group position={[10, 2, -28]}>
-        <mesh ref={knot}>
-          <torusKnotGeometry args={[4.4, 1.35, 420, 64]} />
-          <meshPhysicalMaterial
-            color="#ffffff"
-            metalness={1}
-            roughness={0.1}
-            iridescence={1}
-            iridescenceIOR={1.6}
-            clearcoat={1}
-            envMapIntensity={1.9}
-          />
-        </mesh>
+        <group ref={knot}>
+          {/* iridescent core */}
+          <mesh>
+            <icosahedronGeometry args={[2.4, 4]} />
+            <meshPhysicalMaterial
+              color="#ffffff"
+              metalness={1}
+              roughness={0.08}
+              iridescence={1}
+              iridescenceIOR={1.7}
+              clearcoat={1}
+              envMapIntensity={2.1}
+            />
+          </mesh>
+          {/* twelve chrome petals on the icosahedron vertices */}
+          {PETAL_POSITIONS.map((p, i) => (
+            <mesh key={i} ref={(m) => (petals.current[i] = m)} position={p}>
+              <icosahedronGeometry args={[1.45, 3]} />
+              <meshPhysicalMaterial
+                color="#ffffff"
+                metalness={1}
+                roughness={0.12}
+                iridescence={1}
+                iridescenceIOR={1.5}
+                clearcoat={1}
+                envMapIntensity={1.85}
+              />
+            </mesh>
+          ))}
+        </group>
         <mesh ref={ringA}>
           <torusGeometry args={[9.5, 0.22, 24, 140]} />
           <meshPhysicalMaterial color="#f0eee8" metalness={1} roughness={0.14} iridescence={1} envMapIntensity={1.6} />

@@ -12,16 +12,11 @@ export default function Cursor() {
     let rx = x
     let ry = y
     let raf
-    let sceneHot = false
     const onMove = (e) => {
       x = e.clientX
       y = e.clientY
       const interactive = e.target.closest?.('button, a, .tick')
-      ring.current?.classList.toggle('hot', !!interactive || sceneHot)
-    }
-    const onSceneHot = (e) => {
-      sceneHot = !!e.detail?.hot
-      ring.current?.classList.toggle('hot', sceneHot)
+      ring.current?.classList.toggle('hot', !!interactive)
     }
     const tick = () => {
       raf = requestAnimationFrame(tick)
@@ -31,11 +26,9 @@ export default function Cursor() {
       if (ring.current) ring.current.style.transform = `translate(${rx}px, ${ry}px) translate(-50%,-50%)`
     }
     window.addEventListener('pointermove', onMove)
-    window.addEventListener('lattice-hot', onSceneHot)
     tick()
     return () => {
       window.removeEventListener('pointermove', onMove)
-      window.removeEventListener('lattice-hot', onSceneHot)
       cancelAnimationFrame(raf)
     }
   }, [])
