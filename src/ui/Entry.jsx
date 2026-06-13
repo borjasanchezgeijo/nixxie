@@ -26,7 +26,6 @@ export default function Entry() {
       <div className="blob a" />
       <div className="blob b" />
       <div className="blob c" />
-      <div className="e-scale-note">10⁻³⁵ m ⟶ 10²⁶ m</div>
       <h1 className="e-title" aria-label="SCALE">
         {LETTERS.map((ch, i) => (
           <span

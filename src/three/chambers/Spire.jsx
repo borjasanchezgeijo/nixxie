@@ -5,15 +5,68 @@ import { useChamber, centerZ } from '../useChamber'
 import ParticleField from '../ParticleField'
 import { rng } from '../rand'
 
-// VI — 10⁴ m — geometry grows ambitious.
-// A dusk city of black crystal towers rises from the floor and hangs
-// from the ceiling, each wearing one strip of magenta light. A
-// corridor through the middle lets the camera pass.
+// The floor / ceiling slab — softly elliptical so its rectangular rim
+// dissolves into fog before a neighbouring chamber can see it.
+const SLAB_VERT = /* glsl */ `
+varying vec2 vXY;
+varying float vDist;
+void main() {
+  vXY = position.xy;
+  vec4 mv = modelViewMatrix * vec4(position, 1.0);
+  vDist = -mv.z;
+  gl_Position = projectionMatrix * mv;
+}
+`
+const SLAB_FRAG = /* glsl */ `
+uniform vec3 uBase;
+uniform vec3 uFog;
+uniform float uFogD;
+varying vec2 vXY;
+varying float vDist;
+void main() {
+  float ex = length(vXY * vec2(1.0 / 95.0, 1.0 / 105.0));
+  float edge = smoothstep(0.55, 1.0, ex);
+  float fog = 1.0 - exp(-pow(vDist * uFogD * 1.4, 2.0));
+  vec3 col = mix(uBase, uFog, clamp(max(edge, fog), 0.0, 1.0));
+  gl_FragColor = vec4(col, 1.0);
+}
+`
 
-const COUNT_FLOOR = 110
-const COUNT_CEIL = 70
+// VI — 10⁴ m — geometry grows ambitious.
+// A dense dusk city of black crystal towers rises from the floor and
+// hangs from the ceiling; each wears one strip of magenta light. As
+// the camera scrolls through, the towers gently reach toward it —
+// floor towers rise, ceiling towers descend — so the room breathes
+// instead of standing still like a movie set.
+
+const COUNT_FLOOR = 320
+const COUNT_CEIL = 220
 const FLOOR_Y = -25
 const CEIL_Y = 25
+
+const buildLayout = (seed, count, opts) => {
+  const r = rng(seed)
+  const items = []
+  for (let i = 0; i < count; i++) {
+    let x = (r() * 2 - 1) * opts.xSpread
+    if (Math.abs(x) < 7) x = Math.sign(x || 1) * (7 + r() * 5)
+    const z = (r() * 2 - 1) * opts.zSpread
+    const h = opts.hMin + r() * opts.hRange
+    const w = opts.wMin + r() * opts.wRange
+    items.push({
+      x,
+      z,
+      h,
+      w,
+      ph: r() * Math.PI * 2,
+      // organic per-tower scroll response: amplitude, frequency, phase
+      reachAmp: 0.10 + r() * 0.16,
+      bobAmp: 0.025 + r() * 0.03,
+      bobFreq: 0.4 + r() * 0.5,
+    })
+  }
+  return items
+}
 
 export default function Spire() {
   const group = useRef()
@@ -26,36 +79,50 @@ export default function Spire() {
   const ceilStripMat = useRef()
   const dummy = useMemo(() => new THREE.Object3D(), [])
 
-  const buildLayout = (seed, count) => {
-    const r = rng(seed)
-    const items = []
-    for (let i = 0; i < count; i++) {
-      let x = (r() * 2 - 1) * 52
-      if (Math.abs(x) < 8) x = Math.sign(x || 1) * (8 + r() * 6)
-      const z = (r() * 2 - 1) * 72
-      const h = 10 + r() * 34
-      const w = 1.1 + r() * 2.4
-      items.push({ x, z, h, w, ph: r() * Math.PI * 2 })
-    }
-    return items
-  }
+  const floorUniforms = useMemo(
+    () => ({
+      uBase: { value: new THREE.Color('#120a18') },
+      uFog: { value: new THREE.Color('#190a1e') },
+      uFogD: { value: 0.015 },
+    }),
+    []
+  )
+  const ceilingUniforms = useMemo(
+    () => ({
+      uBase: { value: new THREE.Color('#0e0716') },
+      uFog: { value: new THREE.Color('#190a1e') },
+      uFogD: { value: 0.015 },
+    }),
+    []
+  )
 
-  const floor = useMemo(() => buildLayout(113, COUNT_FLOOR), [])
-  // ceiling spires are slightly shorter on average so they don't crowd the floor
-  const ceil = useMemo(() => {
-    const r = rng(311)
-    const items = []
-    for (let i = 0; i < COUNT_CEIL; i++) {
-      let x = (r() * 2 - 1) * 54
-      if (Math.abs(x) < 8) x = Math.sign(x || 1) * (8 + r() * 6)
-      const z = (r() * 2 - 1) * 72
-      const h = 8 + r() * 26
-      const w = 1.0 + r() * 2.1
-      items.push({ x, z, h, w, ph: r() * Math.PI * 2 })
-    }
-    return items
-  }, [])
+  const floor = useMemo(
+    () =>
+      buildLayout(113, COUNT_FLOOR, {
+        xSpread: 92,
+        zSpread: 110,
+        hMin: 8,
+        hRange: 38,
+        wMin: 1.0,
+        wRange: 2.6,
+      }),
+    []
+  )
+  const ceil = useMemo(
+    () =>
+      buildLayout(311, COUNT_CEIL, {
+        xSpread: 94,
+        zSpread: 110,
+        hMin: 7,
+        hRange: 28,
+        wMin: 0.9,
+        wRange: 2.2,
+      }),
+    []
+  )
 
+  // initial placement so the first visible frame is correct even before
+  // the per-frame update runs.
   useEffect(() => {
     floor.forEach((it, i) => {
       dummy.position.set(it.x, FLOOR_Y + it.h / 2, it.z)
@@ -88,15 +155,85 @@ export default function Spire() {
     ceilStrips.current.instanceMatrix.needsUpdate = true
   }, [floor, ceil, dummy])
 
-  useChamber(5, group, (state) => {
+  // smoothed scroll-velocity drives an extra "reach" — towers stretch
+  // toward the camera when the user is actively moving through.
+  const reachState = useRef(0)
+
+  useChamber(5, group, (state, dt, d) => {
     const t = state.clock.elapsedTime
     const a = world.audio
+
+    // chamber proximity: 1 at center, 0 at ±1.6 edges
+    const prox = Math.max(0, 1 - Math.pow(d / 1.3, 2))
+    // outside-chamber presence: 1 inside, drops to 0 by |d|≈0.75 so
+    // neighbouring chambers don't see the dense city as a smear.
+    const presence = Math.max(0, Math.min(1, 1 - (Math.abs(d) - 0.35) / 0.4))
+    if (state.scene.fog) {
+      floorUniforms.uFog.value.copy(state.scene.fog.color)
+      floorUniforms.uFogD.value = state.scene.fog.density
+      ceilingUniforms.uFog.value.copy(state.scene.fog.color)
+      ceilingUniforms.uFogD.value = state.scene.fog.density
+    }
+    // smooth a velocity-tracking reach signal
+    const target = Math.min(1, Math.abs(world.velocity) * 0.7)
+    reachState.current += (target - reachState.current) * (1 - Math.exp(-dt * 4))
+    const reach = reachState.current
+
+    // update floor towers
+    floor.forEach((it, i) => {
+      const lift =
+        prox * it.h * it.reachAmp +
+        Math.sin(t * it.bobFreq + it.ph) * it.h * it.bobAmp +
+        reach * it.h * 0.05 +
+        a.low * it.h * 0.04
+      // submerge below the floor as the camera leaves the chamber
+      const submerge = (1 - presence) * (it.h + 12)
+      const y = FLOOR_Y + it.h / 2 + lift - submerge
+      dummy.position.set(it.x, y, it.z)
+      dummy.scale.set(it.w, it.h, it.w)
+      dummy.rotation.set(0, it.ph * 0.2 + t * 0.005, 0)
+      dummy.updateMatrix()
+      towers.current.setMatrixAt(i, dummy.matrix)
+
+      dummy.position.set(it.x + it.w * 0.42, y, it.z + it.w * 0.42)
+      dummy.scale.set(0.16, it.h * 0.92, 0.16)
+      dummy.rotation.set(0, it.ph * 0.2 + t * 0.005, 0)
+      dummy.updateMatrix()
+      strips.current.setMatrixAt(i, dummy.matrix)
+    })
+    towers.current.instanceMatrix.needsUpdate = true
+    strips.current.instanceMatrix.needsUpdate = true
+
+    // ceiling towers descend toward the camera with the same envelope,
+    // and retract into the ceiling when the camera is outside the chamber
+    ceil.forEach((it, i) => {
+      const drop =
+        prox * it.h * it.reachAmp +
+        Math.sin(t * it.bobFreq + it.ph + 1.6) * it.h * it.bobAmp +
+        reach * it.h * 0.05 +
+        a.low * it.h * 0.04
+      const retract = (1 - presence) * (it.h + 12)
+      const y = CEIL_Y - it.h / 2 - drop + retract
+      dummy.position.set(it.x, y, it.z)
+      dummy.scale.set(it.w, it.h, it.w)
+      dummy.rotation.set(0, it.ph * 0.2 - t * 0.005, 0)
+      dummy.updateMatrix()
+      ceilTowers.current.setMatrixAt(i, dummy.matrix)
+
+      dummy.position.set(it.x + it.w * 0.42, y, it.z + it.w * 0.42)
+      dummy.scale.set(0.16, it.h * 0.92, 0.16)
+      dummy.rotation.set(0, it.ph * 0.2 - t * 0.005, 0)
+      dummy.updateMatrix()
+      ceilStrips.current.setMatrixAt(i, dummy.matrix)
+    })
+    ceilTowers.current.instanceMatrix.needsUpdate = true
+    ceilStrips.current.instanceMatrix.needsUpdate = true
+
     const pulse = 0.55 + a.high * 1.4 + Math.sin(t * 2.1) * 0.1
     if (stripMat.current) {
       stripMat.current.color.setRGB(1.0 * pulse, 0.32 * pulse, 0.72 * pulse)
     }
     if (ceilStripMat.current) {
-      // ceiling strips drift one beat ahead — the city answers itself
       const cp = 0.5 + a.high * 1.3 + Math.sin(t * 2.1 + 1.7) * 0.1
       ceilStripMat.current.color.setRGB(0.72 * cp, 0.36 * cp, 1.0 * cp)
     }
@@ -138,19 +275,19 @@ export default function Spire() {
       </instancedMesh>
 
       <mesh position={[0, FLOOR_Y - 0.4, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[160, 180]} />
-        <meshStandardMaterial color="#120a18" roughness={0.6} metalness={0.5} envMapIntensity={0.6} />
+        <planeGeometry args={[230, 260]} />
+        <shaderMaterial vertexShader={SLAB_VERT} fragmentShader={SLAB_FRAG} uniforms={floorUniforms} />
       </mesh>
       <mesh position={[0, CEIL_Y + 0.4, 0]} rotation={[Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[160, 180]} />
-        <meshStandardMaterial color="#0e0716" roughness={0.7} metalness={0.45} envMapIntensity={0.55} />
+        <planeGeometry args={[230, 260]} />
+        <shaderMaterial vertexShader={SLAB_VERT} fragmentShader={SLAB_FRAG} uniforms={ceilingUniforms} />
       </mesh>
 
       <ParticleField
         ref={flies}
-        count={650}
+        count={900}
         seed={127}
-        box={[44, 26, 70]}
+        box={[60, 30, 110]}
         size={1.2}
         amp={2.6}
         alpha={0.6}

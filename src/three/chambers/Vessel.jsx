@@ -1,8 +1,38 @@
-import { useRef } from 'react'
+import { useMemo, useRef } from 'react'
+import * as THREE from 'three'
 import { world } from '../../core/world'
 import { useChamber, centerZ } from '../useChamber'
 import ParticleField from '../ParticleField'
 import PetalBloom from '../PetalBloom'
+
+// The floor blends radially into the chamber's fog so its rim never reads
+// as a rectangle from adjacent chambers' viewpoints.
+const FLOOR_VERT = /* glsl */ `
+varying vec2 vXY;
+varying float vDist;
+void main() {
+  vXY = position.xy;
+  vec4 mv = modelViewMatrix * vec4(position, 1.0);
+  vDist = -mv.z;
+  gl_Position = projectionMatrix * mv;
+}
+`
+const FLOOR_FRAG = /* glsl */ `
+uniform vec3 uBase;
+uniform vec3 uFog;
+uniform float uFogD;
+varying vec2 vXY;
+varying float vDist;
+void main() {
+  vec3 col = uBase;
+  // soft elliptical falloff — never a straight rim, never a corner
+  float ex = length(vXY * vec2(1.0 / 60.0, 1.0 / 80.0));
+  float edge = smoothstep(0.55, 1.0, ex);
+  float fog = 1.0 - exp(-pow(vDist * uFogD * 1.3, 2.0));
+  col = mix(col, uFog, clamp(max(edge, fog), 0.0, 1.0));
+  gl_FragColor = vec4(col, 1.0);
+}
+`
 
 // V — 10² m — hollow things that hold us.
 // A pale hall overgrown: enormous distorted blooms melt and smear
@@ -40,9 +70,22 @@ export default function Vessel() {
   const flora = useRef([])
   const spheres = useRef([])
 
+  const floorUniforms = useMemo(
+    () => ({
+      uBase: { value: new THREE.Color('#ddd2bf') },
+      uFog: { value: new THREE.Color('#e9e2d6') },
+      uFogD: { value: 0.0145 },
+    }),
+    []
+  )
+
   useChamber(4, group, (state) => {
     const t = state.clock.elapsedTime
     const a = world.audio
+    if (state.scene.fog) {
+      floorUniforms.uFog.value.copy(state.scene.fog.color)
+      floorUniforms.uFogD.value = state.scene.fog.density
+    }
     flora.current.forEach((f, i) => {
       if (!f?.material) return
       f.material.uniforms.uTime.value = t
@@ -89,8 +132,8 @@ export default function Vessel() {
       ))}
 
       <mesh position={[0, -13.6, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[130, 190]} />
-        <meshStandardMaterial color="#ddd2bf" roughness={0.95} metalness={0} />
+        <planeGeometry args={[180, 240]} />
+        <shaderMaterial vertexShader={FLOOR_VERT} fragmentShader={FLOOR_FRAG} uniforms={floorUniforms} />
       </mesh>
 
       {SPHERES.map((s, i) => (
