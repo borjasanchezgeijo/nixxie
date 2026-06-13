@@ -24,13 +24,15 @@ uniform float uFogD;
 varying vec2 vXY;
 varying float vDist;
 void main() {
-  vec3 col = uBase;
-  // soft elliptical falloff — never a straight rim, never a corner
-  float ex = length(vXY * vec2(1.0 / 60.0, 1.0 / 80.0));
-  float edge = smoothstep(0.55, 1.0, ex);
+  // soft elliptical falloff — never a straight rim, never a corner.
+  // alpha rides the same curve so the floor never occludes anything
+  // beyond its visible footprint (no hard cut on Bloom/Vessel petals).
+  float ex = length(vXY * vec2(1.0 / 70.0, 1.0 / 95.0));
+  float edge = smoothstep(0.45, 1.0, ex);
   float fog = 1.0 - exp(-pow(vDist * uFogD * 1.3, 2.0));
-  col = mix(col, uFog, clamp(max(edge, fog), 0.0, 1.0));
-  gl_FragColor = vec4(col, 1.0);
+  vec3 col = mix(uBase, uFog, clamp(max(edge, fog), 0.0, 1.0));
+  float alpha = (1.0 - edge) * 0.92;
+  gl_FragColor = vec4(col, alpha);
 }
 `
 
@@ -132,8 +134,14 @@ export default function Vessel() {
       ))}
 
       <mesh position={[0, -13.6, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[180, 240]} />
-        <shaderMaterial vertexShader={FLOOR_VERT} fragmentShader={FLOOR_FRAG} uniforms={floorUniforms} />
+        <planeGeometry args={[200, 260]} />
+        <shaderMaterial
+          vertexShader={FLOOR_VERT}
+          fragmentShader={FLOOR_FRAG}
+          uniforms={floorUniforms}
+          transparent
+          depthWrite={false}
+        />
       </mesh>
 
       {SPHERES.map((s, i) => (

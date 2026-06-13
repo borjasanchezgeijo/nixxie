@@ -165,9 +165,14 @@ export default function Spire() {
 
     // chamber proximity: 1 at center, 0 at ±1.6 edges
     const prox = Math.max(0, 1 - Math.pow(d / 1.3, 2))
-    // outside-chamber presence: 1 inside, drops to 0 by |d|≈0.75 so
+    // outside-chamber presence: 1 inside, drops to 0 by |d|≈1.0 so
     // neighbouring chambers don't see the dense city as a smear.
-    const presence = Math.max(0, Math.min(1, 1 - (Math.abs(d) - 0.35) / 0.4))
+    const ad = Math.abs(d)
+    let presence = 1 - (ad - 0.4) / 0.6
+    presence = Math.max(0, Math.min(1, presence))
+    presence = presence * presence * (3 - 2 * presence) // smoothstep
+    // tiny floor so degenerate matrices don't cause flicker
+    const visH = Math.max(0.001, presence)
     if (state.scene.fog) {
       floorUniforms.uFog.value.copy(state.scene.fog.color)
       floorUniforms.uFogD.value = state.scene.fog.density
@@ -179,24 +184,25 @@ export default function Spire() {
     reachState.current += (target - reachState.current) * (1 - Math.exp(-dt * 4))
     const reach = reachState.current
 
-    // update floor towers
+    // floor towers grow from the floor (anchored at FLOOR_Y) so they
+    // never extend above where they should be visible — at presence=0
+    // they shrink to ~zero height and disappear into the slab.
     floor.forEach((it, i) => {
+      const effH = it.h * visH
       const lift =
         prox * it.h * it.reachAmp +
-        Math.sin(t * it.bobFreq + it.ph) * it.h * it.bobAmp +
+        Math.sin(t * it.bobFreq + it.ph) * it.h * it.bobAmp * visH +
         reach * it.h * 0.05 +
-        a.low * it.h * 0.04
-      // submerge below the floor as the camera leaves the chamber
-      const submerge = (1 - presence) * (it.h + 12)
-      const y = FLOOR_Y + it.h / 2 + lift - submerge
+        a.low * it.h * 0.04 * visH
+      const y = FLOOR_Y + effH / 2 + lift
       dummy.position.set(it.x, y, it.z)
-      dummy.scale.set(it.w, it.h, it.w)
+      dummy.scale.set(it.w, effH, it.w)
       dummy.rotation.set(0, it.ph * 0.2 + t * 0.005, 0)
       dummy.updateMatrix()
       towers.current.setMatrixAt(i, dummy.matrix)
 
       dummy.position.set(it.x + it.w * 0.42, y, it.z + it.w * 0.42)
-      dummy.scale.set(0.16, it.h * 0.92, 0.16)
+      dummy.scale.set(0.16, effH * 0.92, 0.16)
       dummy.rotation.set(0, it.ph * 0.2 + t * 0.005, 0)
       dummy.updateMatrix()
       strips.current.setMatrixAt(i, dummy.matrix)
@@ -204,24 +210,23 @@ export default function Spire() {
     towers.current.instanceMatrix.needsUpdate = true
     strips.current.instanceMatrix.needsUpdate = true
 
-    // ceiling towers descend toward the camera with the same envelope,
-    // and retract into the ceiling when the camera is outside the chamber
+    // ceiling towers grow downward from the ceiling
     ceil.forEach((it, i) => {
+      const effH = it.h * visH
       const drop =
         prox * it.h * it.reachAmp +
-        Math.sin(t * it.bobFreq + it.ph + 1.6) * it.h * it.bobAmp +
+        Math.sin(t * it.bobFreq + it.ph + 1.6) * it.h * it.bobAmp * visH +
         reach * it.h * 0.05 +
-        a.low * it.h * 0.04
-      const retract = (1 - presence) * (it.h + 12)
-      const y = CEIL_Y - it.h / 2 - drop + retract
+        a.low * it.h * 0.04 * visH
+      const y = CEIL_Y - effH / 2 - drop
       dummy.position.set(it.x, y, it.z)
-      dummy.scale.set(it.w, it.h, it.w)
+      dummy.scale.set(it.w, effH, it.w)
       dummy.rotation.set(0, it.ph * 0.2 - t * 0.005, 0)
       dummy.updateMatrix()
       ceilTowers.current.setMatrixAt(i, dummy.matrix)
 
       dummy.position.set(it.x + it.w * 0.42, y, it.z + it.w * 0.42)
-      dummy.scale.set(0.16, it.h * 0.92, 0.16)
+      dummy.scale.set(0.16, effH * 0.92, 0.16)
       dummy.rotation.set(0, it.ph * 0.2 - t * 0.005, 0)
       dummy.updateMatrix()
       ceilStrips.current.setMatrixAt(i, dummy.matrix)
