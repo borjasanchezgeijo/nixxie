@@ -3,7 +3,7 @@ export default function MobileCard() {
     <div className="mobile-card">
       <div className="blob a" />
       <div className="blob b" />
-      <h1>SCALE</h1>
+      <h1>Lily’s Garden</h1>
       <div className="m-sub">a museum of scale</div>
       <div className="m-note">
         THIS MUSEUM NEEDS A WIDER DOORWAY

@@ -307,7 +307,8 @@ body {
   perspective: 1100px;
   font-family: var(--serif);
   font-weight: 300;
-  font-size: clamp(5rem, 16.5vw, 21rem);
+  font-size: clamp(2.4rem, 7vw, 8.5rem);
+  letter-spacing: 0.02em;
   line-height: 0.88;
   text-transform: uppercase;
 }

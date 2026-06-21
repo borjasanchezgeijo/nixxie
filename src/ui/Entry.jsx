@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { world } from '../core/world'
 import { startAudio } from '../audio/AudioEngine'
 
-const LETTERS = 'SCALE'.split('')
+const LETTERS = "LILY’S GARDEN".split('')
+const MID = (LETTERS.length - 1) / 2
 
 export default function Entry() {
   const [leaving, setLeaving] = useState(false)
@@ -26,17 +27,17 @@ export default function Entry() {
       <div className="blob a" />
       <div className="blob b" />
       <div className="blob c" />
-      <h1 className="e-title" aria-label="SCALE">
+      <h1 className="e-title" aria-label="Lily’s Garden">
         {LETTERS.map((ch, i) => (
           <span
             key={i}
             style={{
-              '--ry': `${(i - 2) * 9}deg`,
-              '--tz': `${(2 - Math.abs(i - 2)) * 46}px`,
-              '--d': `${0.5 + i * 0.13}s`,
+              '--ry': `${(i - MID) * 4}deg`,
+              '--tz': `${(MID - Math.abs(i - MID)) * 18}px`,
+              '--d': `${0.5 + i * 0.07}s`,
             }}
           >
-            {ch}
+            {ch === ' ' ? ' ' : ch}
           </span>
         ))}
       </h1>
